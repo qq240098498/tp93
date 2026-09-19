@@ -6,32 +6,95 @@ const DATA_FILE = path.join(DATA_DIR, 'db.json');
 const TEMP_FILE = path.join(DATA_DIR, 'db.json.tmp');
 
 const LEVELS = ['提示', '警告', '错误'];
-const STATUSES = ['启用', '停用'];
+// 规则的状态流转：起草 → 已复核 → 启用 →（可停用）；停用或已复核后改了内容要退回起草重走
+const STATUSES = ['起草', '已复核', '启用', '停用'];
+const STATUS = {
+  DRAFT: '起草',
+  REVIEWED: '已复核',
+  ENABLED: '启用',
+  DISABLED: '停用',
+};
 const FILE_TYPES = ['全部', 'js', 'sh', 'md', 'yml'];
+// 规则的适用文件类型允许先空着：起草阶段可以不选，启用把关时会拦住
+const RULE_FILE_TYPES = ['', '全部', 'js', 'sh', 'md', 'yml'];
 const MAX_CODE_LENGTH = 20;
 const MAX_RULE_NAME_LENGTH = 40;
 const MAX_PATTERN_LENGTH = 60;
 const MAX_NOTE_LENGTH = 200;
+const MAX_OPERATOR_LENGTH = 40;
 const MAX_PATH_LENGTH = 120;
 const MAX_CONTENT_LENGTH = 4000;
 
-// 检查规则的初始数据。十二条规则里有两条是停用的，
-// 有一条启用的规则在现有文件里一条命中都没有，用来观察从未命中的规则
+// 初始数据里的流转记录与版本快照都挂在这个操作者名下，方便和真实操作区分
+const SEED_OPERATOR = '初始数据';
+
+// 检查规则的初始数据。多数是已启用的，两条走过停用，
+// 另外放了一条起草（适用文件类型还没选）和一条已复核，用来观察状态流转
 function seedRules() {
   const at = '2026-09-02T02:00:00.000Z';
+  const enabledAt = '2026-09-02T02:10:00.000Z';
+  const disabledAt = '2026-09-03T08:30:00.000Z';
+
+  // 启用的规则：一版快照 + 一条起草到启用的流转记录
+  function enabledRule(id, code, name, level, fileType, pattern, note) {
+    return {
+      id, code, name, level, status: STATUS.ENABLED, fileType, pattern, note,
+      version: 1,
+      versions: [{
+        version: 1, code, name, level, fileType, pattern, note,
+        enabledAt, enabledBy: SEED_OPERATOR,
+      }],
+      transitions: [{
+        id: `${id}-t1`, action: '启用', from: STATUS.DRAFT, to: STATUS.ENABLED,
+        at: enabledAt, by: SEED_OPERATOR, note: '初始导入',
+      }],
+      createdAt: at, updatedAt: at,
+    };
+  }
+
+  // 停用的规则：先启用再停用，版本快照保留着，能看出当时管事的是哪一版
+  function disabledRule(id, code, name, level, fileType, pattern, note, disableNote) {
+    const rule = enabledRule(id, code, name, level, fileType, pattern, note);
+    rule.status = STATUS.DISABLED;
+    rule.updatedAt = disabledAt;
+    rule.transitions.push({
+      id: `${id}-t2`, action: '停用', from: STATUS.ENABLED, to: STATUS.DISABLED,
+      at: disabledAt, by: SEED_OPERATOR, note: disableNote,
+    });
+    return rule;
+  }
+
   return [
-    { id: 'rule-1001', code: 'CODE-001', name: '禁止提交调试输出', level: '警告', status: '启用', fileType: 'js', pattern: 'console.log', note: '上线前要换成统一日志', createdAt: at, updatedAt: at },
-    { id: 'rule-1002', code: 'CODE-002', name: '变量声明统一用 let 或 const', level: '错误', status: '启用', fileType: 'js', pattern: 'var ', note: '老代码里还有不少', createdAt: at, updatedAt: at },
-    { id: 'rule-1003', code: 'CODE-003', name: '待办事项需要收口', level: '提示', status: '启用', fileType: '全部', pattern: 'TODO', note: '带人名与期限的可以留', createdAt: at, updatedAt: at },
-    { id: 'rule-1004', code: 'CODE-004', name: '禁止动态执行代码', level: '错误', status: '启用', fileType: '全部', pattern: 'eval(', note: '', createdAt: at, updatedAt: at },
-    { id: 'rule-1005', code: 'CODE-005', name: '禁止把口令写进代码', level: '错误', status: '启用', fileType: '全部', pattern: 'password =', note: '口令一律走统一配置', createdAt: at, updatedAt: at },
-    { id: 'rule-1006', code: 'CODE-006', name: '空捕获块要写清原因', level: '警告', status: '启用', fileType: 'js', pattern: 'catch (e) {}', note: '', createdAt: at, updatedAt: at },
-    { id: 'rule-1007', code: 'CODE-007', name: '调试开关上线前要关掉', level: '警告', status: '停用', fileType: 'js', pattern: 'DEBUG = true', note: '等联调结束再打开', createdAt: at, updatedAt: at },
-    { id: 'rule-1008', code: 'CODE-008', name: '数据库地址不许写死在代码里', level: '错误', status: '启用', fileType: '全部', pattern: 'postgres://', note: '', createdAt: at, updatedAt: at },
-    { id: 'rule-1009', code: 'CODE-009', name: '取配置项要走统一封装', level: '提示', status: '启用', fileType: 'js', pattern: 'process.env[', note: '直接按名字取容易拼错', createdAt: at, updatedAt: at },
-    { id: 'rule-1010', code: 'CODE-010', name: '遗留注释要清理', level: '提示', status: '停用', fileType: '全部', pattern: 'FIXME', note: '', createdAt: at, updatedAt: at },
-    { id: 'rule-1011', code: 'CODE-011', name: '脚本里禁止直接用强制删除', level: '警告', status: '启用', fileType: 'sh', pattern: 'rm -rf', note: '脚本里改用受控的清理命令', createdAt: at, updatedAt: at },
-    { id: 'rule-1012', code: 'CODE-012', name: '文档里的临时占位要删掉', level: '提示', status: '启用', fileType: 'md', pattern: '待补', note: '', createdAt: at, updatedAt: at },
+    enabledRule('rule-1001', 'CODE-001', '禁止提交调试输出', '警告', 'js', 'console.log', '上线前要换成统一日志'),
+    enabledRule('rule-1002', 'CODE-002', '变量声明统一用 let 或 const', '错误', 'js', 'var ', '老代码里还有不少'),
+    enabledRule('rule-1003', 'CODE-003', '待办事项需要收口', '提示', '全部', 'TODO', '带人名与期限的可以留'),
+    enabledRule('rule-1004', 'CODE-004', '禁止动态执行代码', '错误', '全部', 'eval(', ''),
+    enabledRule('rule-1005', 'CODE-005', '禁止把口令写进代码', '错误', '全部', 'password =', '口令一律走统一配置'),
+    enabledRule('rule-1006', 'CODE-006', '空捕获块要写清原因', '警告', 'js', 'catch (e) {}', ''),
+    disabledRule('rule-1007', 'CODE-007', '调试开关上线前要关掉', '警告', 'js', 'DEBUG = true', '等联调结束再打开', '联调期间保留，上线前再启'),
+    enabledRule('rule-1008', 'CODE-008', '数据库地址不许写死在代码里', '错误', '全部', 'postgres://', ''),
+    enabledRule('rule-1009', 'CODE-009', '取配置项要走统一封装', '提示', 'js', 'process.env[', '直接按名字取容易拼错'),
+    disabledRule('rule-1010', 'CODE-010', '遗留注释要清理', '提示', '全部', 'FIXME', '', '存量太多，先不拦'),
+    enabledRule('rule-1011', 'CODE-011', '脚本里禁止直接用强制删除', '警告', 'sh', 'rm -rf', '脚本里改用受控的清理命令'),
+    enabledRule('rule-1012', 'CODE-012', '文档里的临时占位要删掉', '提示', 'md', '待补', ''),
+    // 起草：内容还没定全，适用文件类型也没选，此时点启用会被把关拦住
+    {
+      id: 'rule-1013', code: 'CODE-013', name: '脚本里不要直接拉远程文件', level: '警告',
+      status: STATUS.DRAFT, fileType: '', pattern: 'wget ', note: '',
+      version: 0, versions: [], transitions: [],
+      createdAt: '2026-09-10T06:00:00.000Z', updatedAt: '2026-09-10T06:00:00.000Z',
+    },
+    // 已复核：自己过完一遍，只差点启用
+    {
+      id: 'rule-1014', code: 'CODE-014', name: '提交前去掉调试断点', level: '提示',
+      status: STATUS.REVIEWED, fileType: 'js', pattern: 'debugger', note: '',
+      version: 0, versions: [],
+      transitions: [{
+        id: 'rule-1014-t1', action: '提交复核', from: STATUS.DRAFT, to: STATUS.REVIEWED,
+        at: '2026-09-12T03:20:00.000Z', by: SEED_OPERATOR, note: '自查通过',
+      }],
+      createdAt: '2026-09-12T03:00:00.000Z', updatedAt: '2026-09-12T03:20:00.000Z',
+    },
   ];
 }
 
@@ -295,14 +358,89 @@ function seedFiles() {
   ];
 }
 
+// 把单条版本快照整理成固定结构，缺字段的不进快照
+function normalizeVersion(source, fallbackVersion) {
+  const data = source && typeof source === 'object' ? source : {};
+  const version = Number.isInteger(data.version) && data.version > 0 ? data.version : fallbackVersion;
+  const fileType = RULE_FILE_TYPES.includes(data.fileType) ? data.fileType : '';
+  return {
+    version,
+    code: typeof data.code === 'string' ? data.code.trim() : '',
+    name: typeof data.name === 'string' ? data.name.trim() : '',
+    level: LEVELS.includes(data.level) ? data.level : LEVELS[0],
+    fileType,
+    pattern: typeof data.pattern === 'string' ? data.pattern : '',
+    note: typeof data.note === 'string' ? data.note : '',
+    enabledAt: typeof data.enabledAt === 'string' && data.enabledAt ? data.enabledAt : '',
+    enabledBy: typeof data.enabledBy === 'string' ? data.enabledBy.trim() : '',
+  };
+}
+
+// 把单条流转记录整理成固定结构
+function normalizeTransition(source, fallbackIndex) {
+  const data = source && typeof source === 'object' ? source : {};
+  return {
+    id: typeof data.id === 'string' && data.id ? data.id : `transition-restored-${fallbackIndex + 1}`,
+    action: typeof data.action === 'string' && data.action ? data.action : '状态变更',
+    from: STATUSES.includes(data.from) ? data.from : '',
+    to: STATUSES.includes(data.to) ? data.to : '',
+    at: typeof data.at === 'string' && data.at ? data.at : '',
+    by: typeof data.by === 'string' ? data.by.trim() : '',
+    note: typeof data.note === 'string' ? data.note : '',
+  };
+}
+
+// 旧版本数据没有状态流转：按当时状态补出一条说得通的来历，
+// 启用的补一版快照，停用的先补启用再补停用，历史命中才指得上版本
+function migrateLegacyTransitions(rule) {
+  const firstAt = rule.createdAt;
+  const lastAt = rule.updatedAt || rule.createdAt;
+  if (rule.status === STATUS.ENABLED) {
+    rule.version = 1;
+    rule.versions = [snapshotOf(rule, 1, firstAt, SEED_OPERATOR)];
+    rule.transitions = [{
+      id: `${rule.id}-t-migrate-1`, action: '启用', from: STATUS.DRAFT, to: STATUS.ENABLED,
+      at: firstAt, by: SEED_OPERATOR, note: '旧数据补录',
+    }];
+  } else if (rule.status === STATUS.DISABLED) {
+    rule.version = 1;
+    rule.versions = [snapshotOf(rule, 1, firstAt, SEED_OPERATOR)];
+    rule.transitions = [
+      {
+        id: `${rule.id}-t-migrate-1`, action: '启用', from: STATUS.DRAFT, to: STATUS.ENABLED,
+        at: firstAt, by: SEED_OPERATOR, note: '旧数据补录',
+      },
+      {
+        id: `${rule.id}-t-migrate-2`, action: '停用', from: STATUS.ENABLED, to: STATUS.DISABLED,
+        at: lastAt, by: SEED_OPERATOR, note: '旧数据补录',
+      },
+    ];
+  }
+}
+
+// 启用那一刻规则各字段拍成的快照
+function snapshotOf(rule, version, enabledAt, enabledBy) {
+  return {
+    version,
+    code: rule.code,
+    name: rule.name,
+    level: rule.level,
+    fileType: rule.fileType,
+    pattern: rule.pattern,
+    note: rule.note,
+    enabledAt,
+    enabledBy,
+  };
+}
+
 // 把单条规则整理成固定结构，级别与状态不认识的一律回到默认值
 function normalizeRule(item, fallbackIndex) {
   const source = item && typeof item === 'object' ? item : {};
   const createdAt = typeof source.createdAt === 'string' && source.createdAt ? source.createdAt : new Date().toISOString();
   const level = LEVELS.includes(source.level) ? source.level : LEVELS[0];
   const status = STATUSES.includes(source.status) ? source.status : STATUSES[0];
-  const fileType = FILE_TYPES.includes(source.fileType) ? source.fileType : FILE_TYPES[0];
-  return {
+  const fileType = RULE_FILE_TYPES.includes(source.fileType) ? source.fileType : '';
+  const rule = {
     id: typeof source.id === 'string' && source.id ? source.id : `rule-restored-${fallbackIndex + 1}`,
     code: typeof source.code === 'string' ? source.code.trim() : '',
     name: typeof source.name === 'string' ? source.name.trim() : '',
@@ -311,9 +449,17 @@ function normalizeRule(item, fallbackIndex) {
     fileType,
     pattern: typeof source.pattern === 'string' ? source.pattern : '',
     note: typeof source.note === 'string' ? source.note : '',
+    version: Number.isInteger(source.version) && source.version >= 0 ? source.version : 0,
+    versions: Array.isArray(source.versions) ? source.versions.map(normalizeVersion) : [],
+    transitions: Array.isArray(source.transitions) ? source.transitions.map(normalizeTransition) : [],
     createdAt,
     updatedAt: typeof source.updatedAt === 'string' && source.updatedAt ? source.updatedAt : createdAt,
   };
+  // 旧数据迁移：有状态但没有流转记录的，补录来历与版本快照
+  if ((status === STATUS.ENABLED || status === STATUS.DISABLED) && rule.transitions.length === 0) {
+    migrateLegacyTransitions(rule);
+  }
+  return rule;
 }
 
 // 把单个文件整理成固定结构，类型不在清单里的一律从路径后缀推断
@@ -335,10 +481,31 @@ function normalizeFile(item, fallbackIndex) {
   };
 }
 
+// 扫描批次是服务端自己写的，这里只兜住结构：编号、时刻和命中清单必须在
+function normalizeBatch(item, fallbackIndex) {
+  const source = item && typeof item === 'object' ? item : {};
+  if (!source.id) return null;
+  return {
+    id: source.id,
+    scannedAt: typeof source.scannedAt === 'string' && source.scannedAt ? source.scannedAt : '',
+    scannedBy: typeof source.scannedBy === 'string' ? source.scannedBy.trim() : '',
+    scope: source.scope && typeof source.scope === 'object' ? source.scope : {},
+    enabledRules: Number.isInteger(source.enabledRules) ? source.enabledRules : 0,
+    rulesUsed: Number.isInteger(source.rulesUsed) ? source.rulesUsed : 0,
+    filesInScope: Number.isInteger(source.filesInScope) ? source.filesInScope : 0,
+    filesTotal: Number.isInteger(source.filesTotal) ? source.filesTotal : 0,
+    rulesTotal: Number.isInteger(source.rulesTotal) ? source.rulesTotal : 0,
+    warning: typeof source.warning === 'string' ? source.warning : '',
+    rules: Array.isArray(source.rules) ? source.rules : [],
+    hits: Array.isArray(source.hits) ? source.hits : [],
+    summary: source.summary && typeof source.summary === 'object' ? source.summary : { total: 0 },
+  };
+}
+
 // 整份数据保证规则与文件结构一致，缺编号、缺名称、缺路径的条目一律丢掉
 function normalize(raw) {
   const source = raw && typeof raw === 'object' ? raw : {};
-  const seed = { rules: seedRules(), files: seedFiles() };
+  const seed = { rules: seedRules(), files: seedFiles(), scanBatches: [] };
 
   const rawRules = Array.isArray(source.rules) ? source.rules : seed.rules;
   const seenRuleIds = new Set();
@@ -346,7 +513,7 @@ function normalize(raw) {
   const rules = [];
   rawRules.forEach((item, index) => {
     const rule = normalizeRule(item, index);
-    if (!rule.id || !rule.code || !rule.name || !rule.pattern) return;
+    if (!rule.id || !rule.code || !rule.name) return;
     const lower = rule.code.toLowerCase();
     if (seenRuleIds.has(rule.id) || seenCodes.has(lower)) return;
     seenRuleIds.add(rule.id);
@@ -368,7 +535,17 @@ function normalize(raw) {
     files.push(file);
   });
 
-  return { rules, files };
+  const rawBatches = Array.isArray(source.scanBatches) ? source.scanBatches : seed.scanBatches;
+  const seenBatchIds = new Set();
+  const scanBatches = [];
+  rawBatches.forEach((item, index) => {
+    const batch = normalizeBatch(item, index);
+    if (!batch || seenBatchIds.has(batch.id)) return;
+    seenBatchIds.add(batch.id);
+    scanBatches.push(batch);
+  });
+
+  return { rules, files, scanBatches };
 }
 
 // 读取数据文件：文件缺失或内容损坏时回落到初始数据并立刻补写
@@ -377,7 +554,7 @@ function load() {
     const raw = fs.readFileSync(DATA_FILE, 'utf8');
     return normalize(JSON.parse(raw));
   } catch (err) {
-    const data = { rules: seedRules(), files: seedFiles() };
+    const data = { rules: seedRules(), files: seedFiles(), scanBatches: [] };
     save(data);
     return data;
   }
@@ -399,13 +576,20 @@ module.exports = {
   normalize,
   normalizeRule,
   normalizeFile,
+  normalizeVersion,
+  normalizeTransition,
+  normalizeBatch,
+  snapshotOf,
   LEVELS,
   STATUSES,
+  STATUS,
   FILE_TYPES,
+  RULE_FILE_TYPES,
   MAX_CODE_LENGTH,
   MAX_RULE_NAME_LENGTH,
   MAX_PATTERN_LENGTH,
   MAX_NOTE_LENGTH,
+  MAX_OPERATOR_LENGTH,
   MAX_PATH_LENGTH,
   MAX_CONTENT_LENGTH,
   DATA_FILE,

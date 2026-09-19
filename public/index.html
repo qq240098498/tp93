@@ -10,7 +10,7 @@
   <header class="topbar">
     <div>
       <h1>检查规则与命中清单工作台</h1>
-      <p class="subtitle">维护检查规则与纳入检查的文件，按规则扫一遍，把命中记到具体的文件与行上</p>
+      <p class="subtitle">规则从起草开始，自己复核后启用，启用的才参与扫描；每次状态变化都留记录，历史命中看得出当时管事的版本</p>
     </div>
     <div class="topbar-right">
       <label class="operator" data-field="operator">当前操作者
@@ -37,6 +37,7 @@
           <button type="button" id="rule-new">新建规则</button>
         </div>
       </div>
+      <p class="flow-tip">状态流转：<strong>起草</strong>（写完先自己复核）→ <strong>已复核</strong> → <strong>启用</strong>（启用前要过四项把关，启用后才参与扫描）⇄ <strong>停用</strong>（停用后不再参与，历史命中保留）。已复核或停用后改了内容，会自动退回起草重走。</p>
       <div class="table-wrap">
         <table class="grid">
           <thead>
@@ -45,6 +46,7 @@
               <th>名称</th>
               <th>级别</th>
               <th>状态</th>
+              <th>版本</th>
               <th>适用文件类型</th>
               <th>匹配写法</th>
               <th>说明</th>
@@ -60,24 +62,22 @@
       <form class="entry-form hidden" id="rule-form" autocomplete="off">
         <h3 id="rule-form-title">新建规则</h3>
         <div class="form-row">
-          <label data-field="code">规则编码<input id="rule-code" placeholder="例如 CODE-013" maxlength="20"></label>
+          <label data-field="code">规则编码<input id="rule-code" placeholder="例如 CODE-015" maxlength="20"></label>
           <label data-field="name">规则名称<input id="rule-name" placeholder="例如 禁止把地址写死在代码里" maxlength="40"></label>
           <label data-field="level">级别
             <select id="rule-level"></select>
           </label>
         </div>
         <div class="form-row">
-          <label data-field="status">状态
-            <select id="rule-status"></select>
-          </label>
           <label data-field="fileType">适用文件类型
             <select id="rule-file-type"></select>
           </label>
           <label data-field="pattern">匹配写法<input id="rule-pattern" placeholder="例如 console.log" maxlength="60"></label>
         </div>
         <label class="full" data-field="note">说明<input id="rule-note" placeholder="这条规则管什么、为什么这么定" maxlength="200"></label>
+        <p class="form-hint">新规则保存后是<strong>起草</strong>状态，不在这里直接选状态；内容写完点“提交复核”，过完把关再“启用”。</p>
         <div class="form-actions">
-          <button type="submit">保存</button>
+          <button type="submit">保存起草</button>
           <button type="button" id="rule-cancel" class="ghost">取消</button>
         </div>
       </form>
@@ -136,7 +136,7 @@
           <button type="button" id="scan-run">按规则扫一遍</button>
         </div>
       </div>
-      <p class="scan-meta" id="scan-meta">还没有扫过，点右上角扫一遍</p>
+      <p class="scan-meta" id="scan-meta">还没有扫过，点右上角扫一遍（只有启用中的规则参与）</p>
       <p class="scan-warning hidden" id="scan-warning"></p>
       <div class="summary hidden" id="scan-summary"></div>
       <div class="table-wrap">
@@ -144,6 +144,7 @@
           <thead>
             <tr>
               <th>规则编码</th>
+              <th>版本</th>
               <th>级别</th>
               <th>规则名称</th>
               <th>文件</th>
@@ -156,7 +157,45 @@
       </div>
       <p class="empty-tip hidden" id="hit-empty">这一轮没有命中</p>
     </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>扫描批次历史</h2>
+        <div class="filters">
+          <button type="button" id="batch-refresh" class="ghost">刷新</button>
+        </div>
+      </div>
+      <p class="scan-meta">每扫一遍存一个批次，命中连同当时管事的规则版本一起留着；规则后来停用或改版，批次里照样看得出。</p>
+      <div class="table-wrap">
+        <table class="grid">
+          <thead>
+            <tr>
+              <th>扫描时刻</th>
+              <th>操作者</th>
+              <th>范围</th>
+              <th>参与规则</th>
+              <th>文件</th>
+              <th>命中</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="batch-body"></tbody>
+        </table>
+      </div>
+      <p class="empty-tip hidden" id="batch-empty">还没有扫描批次</p>
+    </section>
   </main>
+
+  <div class="modal-mask hidden" id="modal-mask">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h3 id="modal-title"></h3>
+        <button type="button" class="link" id="modal-close">关闭</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+      <div class="modal-actions" id="modal-actions"></div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>

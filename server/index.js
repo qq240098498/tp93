@@ -54,6 +54,40 @@ app.delete('/api/rules/:id', (req, res) => {
   }
 });
 
+// 启用前先看把关逐项过没过，不改状态
+app.get('/api/rules/:id/enable-checks', (req, res) => {
+  try {
+    res.json(api.previewEnable(req.params.id));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+// 状态流转：提交复核、启用、停用，请求体里带操作者与说明
+app.post('/api/rules/:id/review', (req, res) => {
+  try {
+    res.json(api.transitionRule(req.params.id, 'review', req.body));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.post('/api/rules/:id/enable', (req, res) => {
+  try {
+    res.json(api.transitionRule(req.params.id, 'enable', req.body));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.post('/api/rules/:id/disable', (req, res) => {
+  try {
+    res.json(api.transitionRule(req.params.id, 'disable', req.body));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
 app.get('/api/files', (req, res) => {
   res.json(api.listFiles({
     type: api.readQuery(req.query, 'type'),
@@ -101,7 +135,21 @@ app.post('/api/scan', (req, res) => {
       level: body.level,
       fileId: body.fileId,
       ruleId: body.ruleId,
+      operator: body.operator,
     }));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+// 扫描批次历史与某次批次的详情
+app.get('/api/scan-batches', (_req, res) => {
+  res.json(api.listBatches());
+});
+
+app.get('/api/scan-batches/:id', (req, res) => {
+  try {
+    res.json(api.getBatch(req.params.id));
   } catch (err) {
     sendError(res, err);
   }
@@ -116,7 +164,12 @@ app.use('/api', (_req, res) => {
 function sendError(res, err) {
   if (err instanceof api.ApiError) {
     return res.status(err.status).json({
-      error: { code: err.code, message: err.message, field: err.field },
+      error: {
+        code: err.code,
+        message: err.message,
+        field: err.field,
+        details: err.details,
+      },
     });
   }
   console.error('[tp93] 处理请求时出现未预期的问题：', err);
