@@ -45,6 +45,7 @@
               <th>名称</th>
               <th>级别</th>
               <th>状态</th>
+              <th>版本</th>
               <th>适用文件类型</th>
               <th>匹配写法</th>
               <th>说明</th>
@@ -67,15 +68,16 @@
           </label>
         </div>
         <div class="form-row">
-          <label data-field="status">状态
-            <select id="rule-status"></select>
+          <label data-field="level">级别
+            <select id="rule-level"></select>
           </label>
           <label data-field="fileType">适用文件类型
             <select id="rule-file-type"></select>
           </label>
-          <label data-field="pattern">匹配写法<input id="rule-pattern" placeholder="例如 console.log" maxlength="60"></label>
+          <label data-field="pattern">匹配写法<input id="rule-pattern" placeholder="例如 console.log（起草阶段可以先空着，启用前必须补全）" maxlength="60"></label>
         </div>
         <label class="full" data-field="note">说明<input id="rule-note" placeholder="这条规则管什么、为什么这么定" maxlength="200"></label>
+        <label class="full" data-field="reason">本次留痕说明（可选）<input id="rule-reason" placeholder="新建登记或停用中改版时，可以顺手写一句，会记到这条规则的流转记录里" maxlength="200"></label>
         <div class="form-actions">
           <button type="submit">保存</button>
           <button type="button" id="rule-cancel" class="ghost">取消</button>
@@ -144,6 +146,7 @@
           <thead>
             <tr>
               <th>规则编码</th>
+              <th>管事版本</th>
               <th>级别</th>
               <th>规则名称</th>
               <th>文件</th>
@@ -155,8 +158,57 @@
         </table>
       </div>
       <p class="empty-tip hidden" id="hit-empty">这一轮没有命中</p>
+
+      <h3 class="sub-title">历史扫描</h3>
+      <p class="scan-meta">每一轮扫描都会留底：谁扫的、范围多大、命中多少条。点看这一轮可以回看当时是哪一版规则在管事（最近保留 200 轮）</p>
+      <div class="table-wrap">
+        <table class="grid">
+          <thead>
+            <tr>
+              <th>扫描时间</th>
+              <th>操作者</th>
+              <th>范围</th>
+              <th>参与规则</th>
+              <th>文件</th>
+              <th>命中</th>
+              <th>备注</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="scan-body"></tbody>
+        </table>
+      </div>
+      <p class="empty-tip hidden" id="scan-empty">还没有历史扫描记录</p>
     </section>
   </main>
+
+  <!-- 状态流转弹层：选动作、看从什么状态到什么状态、写说明 -->
+  <div class="modal-mask hidden" id="transition-modal">
+    <div class="modal">
+      <h3 id="transition-title">状态流转</h3>
+      <p class="modal-rule" id="transition-rule"></p>
+      <div class="transition-flow" id="transition-flow"></div>
+      <label data-field="reason">本次说明（停用、退回等动作建议写一句）
+        <textarea id="transition-reason" rows="3" maxlength="200" placeholder="为什么做这个动作，例如：写法要调整，先停掉"></textarea>
+      </label>
+      <p class="modal-tip" id="transition-tip"></p>
+      <div class="form-actions">
+        <button type="button" id="transition-confirm">确认</button>
+        <button type="button" id="transition-cancel" class="ghost">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 规则记录弹层：一条规则从起草到现在的每一次状态变化与改版 -->
+  <div class="modal-mask hidden" id="history-modal">
+    <div class="modal modal-wide">
+      <h3 id="history-title">规则记录</h3>
+      <ol class="timeline" id="history-list"></ol>
+      <div class="form-actions">
+        <button type="button" id="history-close" class="ghost">关闭</button>
+      </div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>

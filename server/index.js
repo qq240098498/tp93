@@ -54,6 +54,24 @@ app.delete('/api/rules/:id', (req, res) => {
   }
 });
 
+// 一条规则的状态流转记录：从什么状态到什么状态、什么时候、由谁、有没有说明
+app.get('/api/rules/:id/history', (req, res) => {
+  try {
+    res.json(api.getRuleHistory(req.params.id));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+// 状态流转：提交复核、退回起草、启用、停用
+app.post('/api/rules/:id/transitions', (req, res) => {
+  try {
+    res.json(api.transitionRule(req.params.id, req.body));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
 app.get('/api/files', (req, res) => {
   res.json(api.listFiles({
     type: api.readQuery(req.query, 'type'),
@@ -101,7 +119,25 @@ app.post('/api/scan', (req, res) => {
       level: body.level,
       fileId: body.fileId,
       ruleId: body.ruleId,
+      operator: body.operator,
     }));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+// 历史扫描清单与某一轮的完整命中
+app.get('/api/scans', (_req, res) => {
+  try {
+    res.json(api.listScans());
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/scans/:id', (req, res) => {
+  try {
+    res.json(api.getScan(req.params.id));
   } catch (err) {
     sendError(res, err);
   }
@@ -112,11 +148,11 @@ app.use('/api', (_req, res) => {
   res.status(404).json({ error: { code: 'API_NOT_FOUND', message: '接口不存在', field: '' } });
 });
 
-// 统一错误出口：业务异常按状态码与错误码返回，其余按服务异常处理
+// 统一错误出口：业务异常按状态码与错误码返回，启用把关不过时把每一项卡点一起带回去
 function sendError(res, err) {
   if (err instanceof api.ApiError) {
     return res.status(err.status).json({
-      error: { code: err.code, message: err.message, field: err.field },
+      error: { code: err.code, message: err.message, field: err.field, details: err.details },
     });
   }
   console.error('[tp93] 处理请求时出现未预期的问题：', err);
